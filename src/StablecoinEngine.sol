@@ -4,11 +4,14 @@ pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Stablecoin} from "./Stablecoin.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/interfaces/AggregatorV3Interface.sol";
 
 error Error__IncorrectCollateralToken();
 error Error__CollateralTokenTransferInFailed();
 error Error__HealthFactorBroken();
 error Error__StablecoinMintFailed();
+error Error__StablecoinTransferInFailed();
+error Error__CollateralTransferOurUnsuccessful();
 
 contract StablecoinEngine {
     address public owner;
@@ -51,7 +54,7 @@ contract StablecoinEngine {
         // emit event
         emit CollateralDeposited(msg.sender, amountCollateral);
         // transfer collateral tokens
-        bool success = IERC20(collateralTokenAddress).transferFrom(msg.sender, address(this), amountCollateral);
+        bool success = IERC20(s_collateralToken).transferFrom(msg.sender, address(this), amountCollateral);
         // revert if inbound collateral token transfer unsuccessful
         if (!success) {
             revert Error__CollateralTokenTransferInFailed();
@@ -72,18 +75,66 @@ contract StablecoinEngine {
         stablecoin.mint(msg.sender, amountStablecoinToMint);
     }
 
-    function burnStablecoinAndRedeemCollateral() public {}
+    function burnStablecoinAndRedeemCollateral(uint256 amountCollateral, uint256 amountStablecoinToBurn) public {
+        // #######################
+        // ### BURN STABLECOIN ###
+        // #######################
 
-    function getAccountCollateralValue(address user) public returns (uint256) {
-        uint256 amount = s_userToAmountDeposited[user];
-        uint256 totalCollateralValueInUsd = getUsdValue(amount);
+        // update balances
+        s_userToAmountStablecoinMinted[msg.sender] -= amountStablecoinToBurn;
+
+        // transfer stablecoins to this contract
+        bool success = stablecoin.transferFrom(msg.sender, address(this), amountStablecoinToBurn);
+        if (!success) {
+            revert Error__StablecoinTransferInFailed();
+        }
+        // burn, baby, burn!
+        stablecoin.burn(amountStablecoinToBurn);
+
+        // revert if health factor is broken
+        uint256 userHealthFactorAfterBurn = healthFactor(msg.sender);
+        if (userHealthFactorAfterBurn < MIN_HEALTH_FACTOR) {
+            revert Error__HealthFactorBroken();
+        }
+
+        // #########################
+        // ### REDEEM COLLATERAL ###
+        // #########################
+
+        // remove amount of collateral being redeemed from user's balance
+        s_userToAmountDeposited[msg.sender] -= amountCollateral;
+
+        // transfer collateral from this contract to the user
+        bool successfulCollateralTransfer = IERC20(s_collateralToken).transfer(msg.sender, amountCollateral);
+        if (!successfulCollateralTransfer) {
+            revert Error__CollateralTransferOurUnsuccessful();
+        }
+
+        // revert if health factor is broken
+        uint256 userHealthFactorAfterRedeem = healthFactor(msg.sender);
+        if (userHealthFactorAfterRedeem < MIN_HEALTH_FACTOR) {
+            revert Error__HealthFactorBroken();
+        }
+    }
+
+    function getAccountCollateralValue(address user) public view returns (uint256) {
+        uint256 amount = s_userToAmountDeposited[user]; // amount of collateral user has
+        // uint256 totalCollateralValueInUsd = getUsdValue(amount);
+
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_collateralTokenPriceFeed);
+        (, int256 price,,,) = priceFeed.latestRoundData(); // call oracle to get ETH/USD price
+
+        // calculate and return collateral value in USD
+        // uint256 totalCollateralValueInUsd = ((uint256(price) * 1e10) * amount) / 1e18;
+        uint256 totalCollateralValueInUsd = 2000;
         return totalCollateralValueInUsd;
     }
 
-    function healthFactor(address user) public returns (uint256) {
+    function healthFactor(address user) public view returns (uint256) {
         uint256 totalStablecoinMintedByUser = s_userToAmountStablecoinMinted[msg.sender];
         uint256 collateralValueInUsd = getAccountCollateralValue(msg.sender);
         if (totalStablecoinMintedByUser == 0) {
+            // no stables minted means they're good to go
             return 100e18;
         }
         if (totalStablecoinMintedByUser > 0) {
@@ -93,5 +144,11 @@ contract StablecoinEngine {
         }
     }
 
-    function getUsdValue(uint256 collateralAmount) public view returns (uint256) {}
+    /*
+    function getUsdValue(uint256 collateralAmount) public view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_collateralTokenPriceFeed);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        return ((uint256(price) * 1e10) * collateralAmount) / 1e18;
+    }
+    */
 }
