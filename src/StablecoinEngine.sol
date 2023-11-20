@@ -4,11 +4,12 @@ pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Stablecoin} from "./Stablecoin.sol";
-import {AggregatorV3Interface} from "@chainlink/contracts/src/interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from "chainlink/contracts/src/interfaces/AggregatorV3Interface.sol";
 
-error Error__IncorrectCollateralToken();
-error Error__CollateralTokenTransferInFailed();
-error Error__HealthFactorBroken();
+error Error__IncorrectCollateralToken(address tokenIn);
+error Error__CollateralTokenTransferInFailed(bool collateralTransferResult);
+error Error__HealthFactorBroken(uint256 userHealth, uint256 minHealth);
+error Error__HealthFactorBrokenOnRedeem();
 error Error__StablecoinMintFailed();
 error Error__StablecoinTransferInFailed();
 error Error__CollateralTransferOurUnsuccessful();
@@ -46,7 +47,7 @@ contract StablecoinEngine {
 
         // check that collateral token is correct one
         if (collateralTokenAddress != s_collateralToken) {
-            revert Error__IncorrectCollateralToken();
+            revert Error__IncorrectCollateralToken({tokenIn: collateralTokenAddress});
         }
 
         // update balances
@@ -57,7 +58,7 @@ contract StablecoinEngine {
         bool success = IERC20(s_collateralToken).transferFrom(msg.sender, address(this), amountCollateral);
         // revert if inbound collateral token transfer unsuccessful
         if (!success) {
-            revert Error__CollateralTokenTransferInFailed();
+            revert Error__CollateralTokenTransferInFailed({collateralTransferResult: success});
         }
 
         // #######################
@@ -69,7 +70,7 @@ contract StablecoinEngine {
         // revert if health factor is broken
         uint256 userHealthFactor = healthFactor(msg.sender);
         if (userHealthFactor < MIN_HEALTH_FACTOR) {
-            revert Error__HealthFactorBroken();
+            revert Error__HealthFactorBroken({userHealth: userHealthFactor, minHealth: MIN_HEALTH_FACTOR});
         }
         // mint stablecoin to user
         stablecoin.mint(msg.sender, amountStablecoinToMint);
@@ -94,7 +95,7 @@ contract StablecoinEngine {
         // revert if health factor is broken
         uint256 userHealthFactorAfterBurn = healthFactor(msg.sender);
         if (userHealthFactorAfterBurn < MIN_HEALTH_FACTOR) {
-            revert Error__HealthFactorBroken();
+            revert Error__HealthFactorBrokenOnRedeem();
         }
 
         // #########################
@@ -113,7 +114,7 @@ contract StablecoinEngine {
         // revert if health factor is broken
         uint256 userHealthFactorAfterRedeem = healthFactor(msg.sender);
         if (userHealthFactorAfterRedeem < MIN_HEALTH_FACTOR) {
-            revert Error__HealthFactorBroken();
+            revert Error__HealthFactorBrokenOnRedeem();
         }
     }
 
