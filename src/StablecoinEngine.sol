@@ -5,6 +5,7 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Stablecoin} from "./Stablecoin.sol";
 import {AggregatorV3Interface} from "chainlink/contracts/src/interfaces/AggregatorV3Interface.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 error Error__IncorrectCollateralToken(address tokenIn);
 error Error__CollateralTokenTransferInFailed(bool collateralTransferResult);
@@ -14,7 +15,7 @@ error Error__StablecoinMintFailed();
 error Error__StablecoinTransferInFailed();
 error Error__CollateralTransferOurUnsuccessful();
 
-contract StablecoinEngine {
+contract StablecoinEngine is ERC20 {
     address public owner;
     Stablecoin public stablecoin;
 
@@ -30,7 +31,9 @@ contract StablecoinEngine {
 
     event CollateralDeposited(address indexed user, uint256 indexed amount);
 
-    constructor(address _collateralToken, address _collateralTokenPriceFeed, address _stablecoin) {
+    constructor(address _collateralToken, address _collateralTokenPriceFeed, address _stablecoin)
+        ERC20("StableX", "USDX")
+    {
         s_collateralToken = _collateralToken;
         s_collateralTokenPriceFeed = _collateralTokenPriceFeed;
         stablecoin = Stablecoin(_stablecoin);
@@ -73,7 +76,7 @@ contract StablecoinEngine {
             revert Error__HealthFactorBroken({userHealth: userHealthFactor, minHealth: MIN_HEALTH_FACTOR});
         }
         // mint stablecoin to user
-        stablecoin.mint(msg.sender, amountStablecoinToMint);
+        _mint(msg.sender, amountStablecoinToMint);
     }
 
     function burnStablecoinAndRedeemCollateral(uint256 amountCollateral, uint256 amountStablecoinToBurn) public {
