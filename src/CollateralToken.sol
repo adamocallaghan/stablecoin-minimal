@@ -6,11 +6,11 @@ import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC2
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ERC20Permit} from "lib/openzeppelin-contracts/contracts/token/ERC20/extensions/ERC20Permit.sol";
 
-contract Stablecoin is ERC20, ERC20Burnable, Ownable, ERC20Permit {
+contract CollateralToken is ERC20, ERC20Burnable, Ownable, ERC20Permit {
     constructor(address initialOwner)
         ERC20("CollateralToken", "CLTRL")
         Ownable(initialOwner)
-        ERC20Permit("Stablecoin")
+        ERC20Permit("CollateralToken")
     {}
 
     function mint(address to, uint256 amount) public onlyOwner {

@@ -17,7 +17,6 @@ error Error__CollateralTransferOurUnsuccessful();
 
 contract StablecoinEngine is ERC20 {
     address public owner;
-    Stablecoin public stablecoin;
 
     address public s_collateralToken;
     address public s_collateralTokenPriceFeed;
@@ -31,12 +30,9 @@ contract StablecoinEngine is ERC20 {
 
     event CollateralDeposited(address indexed user, uint256 indexed amount);
 
-    constructor(address _collateralToken, address _collateralTokenPriceFeed, address _stablecoin)
-        ERC20("StableX", "USDX")
-    {
+    constructor(address _collateralToken, address _collateralTokenPriceFeed) ERC20("StableX", "USDX") {
         s_collateralToken = _collateralToken;
         s_collateralTokenPriceFeed = _collateralTokenPriceFeed;
-        stablecoin = Stablecoin(_stablecoin);
     }
 
     function depositCollateralAndMintStablecoin(
@@ -88,12 +84,12 @@ contract StablecoinEngine is ERC20 {
         s_userToAmountStablecoinMinted[msg.sender] -= amountStablecoinToBurn;
 
         // transfer stablecoins to this contract
-        bool success = stablecoin.transferFrom(msg.sender, address(this), amountStablecoinToBurn);
-        if (!success) {
-            revert Error__StablecoinTransferInFailed();
-        }
+        // bool success = this.transferFrom(msg.sender, address(this), amountStablecoinToBurn);
+        // if (!success) {
+        //     revert Error__StablecoinTransferInFailed();
+        // }
         // burn, baby, burn!
-        stablecoin.burn(amountStablecoinToBurn);
+        _burn(msg.sender, amountStablecoinToBurn);
 
         // revert if health factor is broken
         uint256 userHealthFactorAfterBurn = healthFactor(msg.sender);
@@ -123,20 +119,21 @@ contract StablecoinEngine is ERC20 {
 
     function getAccountCollateralValue(address user) public view returns (uint256) {
         uint256 amount = s_userToAmountDeposited[user]; // amount of collateral user has
-        // uint256 totalCollateralValueInUsd = getUsdValue(amount);
+        // // uint256 totalCollateralValueInUsd = getUsdValue(amount);
 
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_collateralTokenPriceFeed);
-        (, int256 price,,,) = priceFeed.latestRoundData(); // call oracle to get ETH/USD price
+        // AggregatorV3Interface priceFeed = AggregatorV3Interface(s_collateralTokenPriceFeed);
+        // (, int256 price,,,) = priceFeed.latestRoundData(); // call oracle to get ETH/USD price
 
         // calculate and return collateral value in USD
-        // uint256 totalCollateralValueInUsd = ((uint256(price) * 1e10) * amount) / 1e18;
-        uint256 totalCollateralValueInUsd = 2000;
+        uint256 totalCollateralValueInUsd = ((uint256(110680464442257317799) * 1e10) * amount) / 1e18;
+        // uint256 totalCollateralValueInUsd = 2000;
         return totalCollateralValueInUsd;
     }
 
     function healthFactor(address user) public view returns (uint256) {
         uint256 totalStablecoinMintedByUser = s_userToAmountStablecoinMinted[msg.sender];
         uint256 collateralValueInUsd = getAccountCollateralValue(msg.sender);
+        // uint256 collateralValueInUsd = 2000;
         if (totalStablecoinMintedByUser == 0) {
             // no stables minted means they're good to go
             return 100e18;
