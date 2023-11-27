@@ -23,3 +23,6 @@ check-collateral-in-engine:
 
 check-stablecoins-minted-to-depositer:
 	cast call $(STABLECOIN_ENGINE_ADDRESS) "balanceOf(address)" $(DEPLOYER_PUBLIC_ADDRESS)
+
+fork-mainnet:
+	anvil --fork-url $(INFURA_RPC_URL)
