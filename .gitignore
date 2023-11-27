@@ -12,3 +12,5 @@ docs/
 
 # Dotenv file
 .env
+backup_env
+backup_Makefile
