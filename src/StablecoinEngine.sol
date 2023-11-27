@@ -11,7 +11,9 @@ error Error__HealthFactorBroken();
 error Error__HealthFactorBrokenOnRedeem();
 error Error__StablecoinMintFailed();
 error Error__StablecoinTransferInFailed();
-error Error__CollateralTransferOurUnsuccessful();
+error Error__CollateralTransferOutUnsuccessful();
+error Error__UserIsNotLiquidatable();
+error Error__UserHealthFactorShouldBeHigherAfterLiquidation();
 
 contract StablecoinEngine is ERC20 {
     address public owner;
@@ -90,7 +92,7 @@ contract StablecoinEngine is ERC20 {
         // transfer collateral from this contract to the user
         bool successfulCollateralTransfer = IERC20(s_collateralToken).transfer(msg.sender, amountCollateral);
         if (!successfulCollateralTransfer) {
-            revert Error__CollateralTransferOurUnsuccessful();
+            revert Error__CollateralTransferOutUnsuccessful();
         }
 
         // revert if health factor is broken
@@ -128,11 +130,44 @@ contract StablecoinEngine is ERC20 {
         }
     }
 
-    /*
-    function getUsdValue(uint256 collateralAmount) public view returns (uint256) {
+    function liquidate(address user, uint256 debtToCover) external {
+        // check if requested user is liquidatable
+        uint256 startingUserHealthFactor = healthFactor(user);
+        if (startingUserHealthFactor >= MIN_HEALTH_FACTOR) {
+            revert Error__UserIsNotLiquidatable();
+        }
+
+        // call oracle to get Eth price
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_collateralTokenPriceFeed);
-        (, int256 price,,,) = priceFeed.latestRoundData();
-        return ((uint256(price) * 1e10) * collateralAmount) / 1e18;
+        (, int256 price,,,) = priceFeed.latestRoundData(); // call oracle to get ETH/USD price
+
+        // get the amount of token from the debtToCover
+        uint256 tokenAmountFromDebtToCover = (uint256(price) * 1e10 * 1e18) / debtToCover;
+
+        // calculate liquidation bonus
+        uint256 bonusCollateral = (tokenAmountFromDebtToCover * LIQUIDATION_BONUS) / 100;
+
+        // amount of collateral to be taken
+        uint256 amountCollateral = (tokenAmountFromDebtToCover + bonusCollateral);
+
+        // remove amount of collateral being redeemed from the liquidated user's balance
+        s_userToAmountDeposited[user] -= amountCollateral;
+
+        // transfer collateral from this contract to the liquidator
+        bool successfulCollateralTransfer = IERC20(s_collateralToken).transfer(msg.sender, amountCollateral);
+        if (!successfulCollateralTransfer) {
+            revert Error__CollateralTransferOutUnsuccessful();
+        }
+
+        // update liquidated user's balances
+        s_userToAmountStablecoinMinted[user] -= debtToCover;
+
+        // liquidator burns their stables (pays off debt) to grab the collateral
+        _burn(msg.sender, debtToCover);
+
+        uint256 endingUserHealthFactor = healthFactor(user);
+        if (startingUserHealthFactor > endingUserHealthFactor) {
+            revert Error__UserHealthFactorShouldBeHigherAfterLiquidation();
+        }
     }
-    */
 }
