@@ -27,6 +27,9 @@ contract StablecoinEngine is ERC20 {
     uint256 public LIQUIDATION_THRESHOLD = 50;
     uint256 public LIQUIDATION_BONUS = 10;
     uint256 public MIN_HEALTH_FACTOR = 1e18;
+    uint256 private constant PRECISION = 1e18;
+    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
+    uint256 private constant FEED_PRECISION = 1e8;
 
     event CollateralDeposited(address indexed user, uint256 indexed amount);
 
@@ -55,12 +58,12 @@ contract StablecoinEngine is ERC20 {
         // #######################
 
         // update balances
-        s_userToAmountStablecoinMinted[msg.sender] += amountStablecoinToMint;
-        // revert if health factor is broken
-        uint256 userHealthFactor = healthFactor(msg.sender);
-        if (userHealthFactor < MIN_HEALTH_FACTOR) {
-            revert Error__HealthFactorBroken();
-        }
+        // s_userToAmountStablecoinMinted[msg.sender] += amountStablecoinToMint;
+        // // revert if health factor is broken
+        // uint256 userHealthFactor = healthFactor(msg.sender);
+        // if (userHealthFactor < MIN_HEALTH_FACTOR) {
+        //     revert Error__HealthFactorBroken();
+        // }
         // mint stablecoin to user
         _mint(msg.sender, amountStablecoinToMint);
     }
@@ -132,17 +135,19 @@ contract StablecoinEngine is ERC20 {
 
     function liquidate(address user, uint256 debtToCover) external {
         // check if requested user is liquidatable
-        uint256 startingUserHealthFactor = healthFactor(user);
-        if (startingUserHealthFactor >= MIN_HEALTH_FACTOR) {
-            revert Error__UserIsNotLiquidatable();
-        }
+        // uint256 startingUserHealthFactor = healthFactor(user);
+        // if (startingUserHealthFactor >= MIN_HEALTH_FACTOR) {
+        //     revert Error__UserIsNotLiquidatable();
+        // }
 
         // call oracle to get Eth price
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_collateralTokenPriceFeed);
         (, int256 price,,,) = priceFeed.latestRoundData(); // call oracle to get ETH/USD price
 
         // get the amount of token from the debtToCover
-        uint256 tokenAmountFromDebtToCover = (uint256(price) * 1e10 * 1e18) / debtToCover;
+        // uint256 tokenAmountFromDebtToCover = (uint256(price) * 1e10 * 1e18) / debtToCover;
+        uint256 useAmountInWei = debtToCover * 1e18;
+        uint256 tokenAmountFromDebtToCover = ((useAmountInWei * 1e18) / (uint256(price) * 1e10));
 
         // calculate liquidation bonus
         uint256 bonusCollateral = (tokenAmountFromDebtToCover * LIQUIDATION_BONUS) / 100;
@@ -154,10 +159,11 @@ contract StablecoinEngine is ERC20 {
         s_userToAmountDeposited[user] -= amountCollateral;
 
         // transfer collateral from this contract to the liquidator
-        bool successfulCollateralTransfer = IERC20(s_collateralToken).transfer(msg.sender, amountCollateral);
-        if (!successfulCollateralTransfer) {
-            revert Error__CollateralTransferOutUnsuccessful();
-        }
+        // bool successfulCollateralTransfer = IERC20(s_collateralToken).transfer(msg.sender, amountCollateral);
+        IERC20(s_collateralToken).transfer(msg.sender, amountCollateral);
+        // if (!successfulCollateralTransfer) {
+        //     revert Error__CollateralTransferOutUnsuccessful();
+        // }
 
         // update liquidated user's balances
         s_userToAmountStablecoinMinted[user] -= debtToCover;
@@ -165,9 +171,19 @@ contract StablecoinEngine is ERC20 {
         // liquidator burns their stables (pays off debt) to grab the collateral
         _burn(msg.sender, debtToCover);
 
-        uint256 endingUserHealthFactor = healthFactor(user);
-        if (startingUserHealthFactor > endingUserHealthFactor) {
-            revert Error__UserHealthFactorShouldBeHigherAfterLiquidation();
-        }
+        // uint256 endingUserHealthFactor = healthFactor(user);
+        // if (startingUserHealthFactor > endingUserHealthFactor) {
+        //     revert Error__UserHealthFactorShouldBeHigherAfterLiquidation();
+        // }
+    }
+
+    function getTokenAmountFromUsd(uint256 usdAmountInWei) public view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_collateralTokenPriceFeed);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        // $100e18 USD Debt
+        // 1 ETH = 2000 USD
+        // The returned value from Chainlink will be 2000 * 1e8
+        // Most USD pairs have 8 decimals, so we will just pretend they all do
+        return ((usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION));
     }
 }
